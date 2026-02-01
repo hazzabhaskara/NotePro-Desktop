@@ -44,7 +44,9 @@
       "output": "release"
     },
     "win": {
-      "target": "dir"
+      "target": "dir",
+      "verifyUpdateCodeSignature": false,
+      "forceCodeSigning": false
     },
     "files": [
       "dist/**/*",

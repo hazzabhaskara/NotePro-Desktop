@@ -88,13 +88,33 @@ export function App() {
   };
 
   const handleDeletePage = async (pageId) => {
-    await window.notepro.deletePage(pageId); // Soft delete
-    await loadPages();
-    if (activePage?.id === pageId) {
-      const remaining = pages.filter(p => p.id !== pageId && p.parentId !== pageId);
-      setActivePage(remaining.length > 0 ? remaining[0] : null);
+    // Optimistic Update
+    const prevPages = [...pages];
+    const prevTrash = [...trashPages];
+    const targetPage = pages.find(p => p.id === pageId);
+
+    try {
+      if (targetPage) {
+        setPages(prev => prev.filter(p => p.id !== pageId && p.parentId !== pageId));
+        setTrashPages(prev => [targetPage, ...prev]); // Add to trash optimistically
+
+        // Handle Active Page Switch
+        if (activePage?.id === pageId) {
+          const remaining = pages.filter(p => p.id !== pageId && p.parentId !== pageId);
+          setActivePage(remaining.length > 0 ? remaining[0] : null);
+        }
+      }
+
+      await window.notepro.deletePage(pageId);
+      // await loadPages(); // No need to reload entire list if optimistic works, or can do silent re-fetch
+    } catch (error) {
+      console.error("Failed to delete page:", error);
+      // Revert rollback
+      setPages(prevPages);
+      setTrashPages(prevTrash);
+      if (activePage?.id === pageId) setActivePage(targetPage); // Restore active
+      alert("Gagal menghapus halaman (lihat console).");
     }
-    // Also might need to clear active page if it was deleted
   };
 
   const handleUpdatePage = async ({ pageId, title, icon, isFavorite }) => {
@@ -122,8 +142,17 @@ export function App() {
   };
 
   const handlePermanentDelete = async (pageId) => {
-    await window.notepro.permanentDeletePage(pageId);
-    await loadPages();
+    // Optimistic
+    const prevTrash = [...trashPages];
+    setTrashPages(prev => prev.filter(p => p.id !== pageId));
+
+    try {
+      await window.notepro.permanentDeletePage(pageId);
+    } catch (error) {
+      console.error("Failed to permanently delete page:", error);
+      setTrashPages(prevTrash); // Revert
+      alert("Gagal menghapus permanen.");
+    }
   };
 
   const navigateToPage = async (pageId) => {

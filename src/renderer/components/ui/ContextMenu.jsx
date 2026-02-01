@@ -53,7 +53,10 @@ export function ContextMenu({ x, y, pageId, isTrash, onAction, onClose }) {
         <React.Fragment key={item.key}>
           {idx > 0 && <div style={{ height: 1, background: 'var(--border)', margin: '2px 0' }} />}
           <div
-            onClick={() => onAction(item.key, pageId)}
+            onClick={(e) => {
+              e.stopPropagation();
+              onAction(item.key, pageId);
+            }}
             style={{
               display: 'flex',
               alignItems: 'center',
