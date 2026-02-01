@@ -1,13 +1,27 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { BlockRenderer } from './BlockRenderer';
+import { BlockMenu } from '../ui/BlockMenu';
 
-export function SortableBlock({ block, onUpdate, onDelete, onAddAfter, onNavigate, onTriggerSlash }) {
+export function SortableBlock({
+    block,
+    onUpdate,
+    onDelete,
+    onAddAfter,
+    onNavigate,
+    onTriggerSlash,
+    onBlockMenuAction
+}) {
+    const [menuOpen, setMenuOpen] = useState(false);
+    const [menuPos, setMenuPos] = useState({ x: 0, y: 0 });
+    const handleRef = useRef(null);
+
     const {
         attributes,
         listeners,
         setNodeRef,
+        setActivatorNodeRef,
         transform,
         transition,
         isDragging
@@ -21,53 +35,85 @@ export function SortableBlock({ block, onUpdate, onDelete, onAddAfter, onNavigat
         padding: '2px 0'
     };
 
+    const handleMenuClick = (e) => {
+        e.stopPropagation();
+        const rect = handleRef.current.getBoundingClientRect();
+        setMenuPos({ x: rect.left, y: rect.bottom + 4 });
+        setMenuOpen(true);
+    };
+
+    const handleAction = (action) => {
+        if (onBlockMenuAction) {
+            onBlockMenuAction(block.id, action);
+        }
+        setMenuOpen(false);
+    };
+
     return (
-        <div ref={setNodeRef} style={style} className="group block-row">
-            {/* Drag Handle & Add Button Container */}
+        <div ref={setNodeRef} style={style} className="block-row">
+            {/* Handle & Add Button Container */}
             <div
+                className="block-controls"
                 style={{
                     position: 'absolute',
-                    left: -48,
-                    top: 4,
+                    left: -44,
+                    top: 2,
                     display: 'flex',
                     alignItems: 'center',
-                    gap: 4,
+                    gap: 2,
                     opacity: 0,
-                    transition: 'opacity 0.2s',
+                    transition: 'opacity 0.15s ease'
                 }}
-                className="block-controls"
             >
                 {/* Add Button */}
                 <button
                     onClick={onAddAfter}
+                    className="block-btn"
                     style={{
-                        width: 20,
-                        height: 20,
+                        width: 22,
+                        height: 24,
                         borderRadius: 4,
-                        background: 'var(--bg-hover)',
+                        background: 'transparent',
                         color: 'var(--text-muted)',
                         border: 'none',
-                        fontSize: 16,
+                        fontSize: 18,
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        cursor: 'pointer'
+                        cursor: 'pointer',
+                        transition: 'all 0.15s'
                     }}
-                    title="Add block below"
-                >+</button>
+                    title="Tambah blok"
+                >
+                    +
+                </button>
 
-                {/* Drag Handle */}
+                {/* Handle Button - Click for menu, Drag to move */}
                 <div
+                    ref={(node) => {
+                        handleRef.current = node;
+                        setActivatorNodeRef(node);
+                    }}
                     {...attributes}
                     {...listeners}
+                    onClick={handleMenuClick}
+                    className="block-handle"
                     style={{
-                        cursor: 'grab',
-                        padding: 4,
+                        width: 18,
+                        height: 24,
+                        borderRadius: 4,
+                        background: 'transparent',
                         color: 'var(--text-dim)',
                         display: 'flex',
-                        alignItems: 'center'
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        cursor: 'grab',
+                        fontSize: 14,
+                        letterSpacing: -2,
+                        transition: 'all 0.15s',
+                        userSelect: 'none'
                     }}
-                    title="Drag to move"
+                    title="Klik untuk menu • Drag untuk pindahkan"
                 >
                     ⋮⋮
                 </div>
@@ -84,9 +130,34 @@ export function SortableBlock({ block, onUpdate, onDelete, onAddAfter, onNavigat
                 />
             </div>
 
+            {/* Block Menu Popover */}
+            {menuOpen && (
+                <BlockMenu
+                    x={menuPos.x}
+                    y={menuPos.y}
+                    onAction={handleAction}
+                    onClose={() => setMenuOpen(false)}
+                />
+            )}
+
             <style>{`
-        .block-row:hover .block-controls { opacity: 1 !important; }
-        .block-controls:hover { opacity: 1 !important; }
+        .block-row:hover .block-controls { 
+          opacity: 1 !important; 
+        }
+        .block-controls:hover { 
+          opacity: 1 !important; 
+        }
+        .block-btn:hover {
+          background: var(--bg-hover) !important;
+          color: var(--text-primary) !important;
+        }
+        .block-handle:hover {
+          background: var(--bg-hover) !important;
+          color: var(--text-primary) !important;
+        }
+        .block-handle:active {
+          cursor: grabbing !important;
+        }
       `}</style>
         </div>
     );

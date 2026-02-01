@@ -127,6 +127,64 @@ export function PageEditor({ page, onUpdatePage, onRefreshPage, onNavigate }) {
     await handleCreateBlock('paragraph', '', {});
   };
 
+  // ── Duplicate Block ──
+  const handleDuplicateBlock = async (blockId) => {
+    const block = blocks.find(b => b.id === blockId);
+    if (block) {
+      const newId = await window.notepro.createBlock({
+        pageId: page.id,
+        type: block.type,
+        content: block.content || '',
+        meta: block.meta || {}
+      });
+      const newBlock = {
+        id: newId,
+        pageId: page.id,
+        type: block.type,
+        content: block.content || '',
+        meta: block.meta || {},
+        order: blocks.length,
+        createdAt: new Date().toISOString()
+      };
+      const newBlocks = [...blocks, newBlock];
+      history.set(newBlocks);
+    }
+  };
+
+  // ── Turn Into (change block type) ──
+  const handleTurnInto = async (blockId, newType) => {
+    await handleUpdateBlock(blockId, { type: newType });
+  };
+
+  // ── Block Menu Action Handler ──
+  const handleBlockMenuAction = async (blockId, action) => {
+    switch (action) {
+      case 'delete':
+        handleDeleteBlock(blockId);
+        break;
+      case 'duplicate':
+        handleDuplicateBlock(blockId);
+        break;
+      case 'turn-h1':
+        handleTurnInto(blockId, 'heading1');
+        break;
+      case 'turn-h2':
+        handleTurnInto(blockId, 'heading2');
+        break;
+      case 'turn-list':
+        handleTurnInto(blockId, 'bulleted_list');
+        break;
+      case 'turn-todo':
+        handleTurnInto(blockId, 'todo');
+        break;
+      case 'turn-quote':
+        handleTurnInto(blockId, 'quote');
+        break;
+      default:
+        console.warn('Unknown block action:', action);
+    }
+  };
+
   // ── Drag End Handler ──
   const handleDragEnd = async (event) => {
     const { active, over } = event;
@@ -302,6 +360,7 @@ export function PageEditor({ page, onUpdatePage, onRefreshPage, onNavigate }) {
                     onAddAfter={() => handleAddBlockAfter(idx)}
                     onNavigate={onNavigate}
                     onTriggerSlash={(rect) => handleTriggerSlash(rect, block.id)}
+                    onBlockMenuAction={handleBlockMenuAction}
                   />
                 ))}
               </SortableContext>

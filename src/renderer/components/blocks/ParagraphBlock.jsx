@@ -1,17 +1,19 @@
-import React, { useRef, useState, useCallback, useEffect } from 'react';
-import { RichTextRenderer } from './RichTextRenderer';
+import React, { useRef, useCallback, useEffect, useState } from 'react';
 
 export function ParagraphBlock({ block, onUpdate, onDelete, onNavigate, onTriggerSlash }) {
-  const [isEditing, setIsEditing] = useState(false);
   const debounceRef = useRef(null);
   const contentRef = useRef(null);
+  const [isFocused, setIsFocused] = useState(false);
 
-  // Sync content only when not editing to avoid cursor jumping, or initial load
+  // Sync content on mount and when block.content changes externally
   useEffect(() => {
-    if (!isEditing && contentRef.current && contentRef.current.innerText !== block.content) {
-      contentRef.current.innerText = block.content || '';
+    if (contentRef.current) {
+      // Only sync if not currently focused to avoid cursor jumping
+      if (document.activeElement !== contentRef.current) {
+        contentRef.current.innerText = block.content || '';
+      }
     }
-  }, [block.content, isEditing]);
+  }, [block.content]);
 
   const handleInput = useCallback((e) => {
     const val = e.target.innerText;
@@ -19,69 +21,81 @@ export function ParagraphBlock({ block, onUpdate, onDelete, onNavigate, onTrigge
     // Check for Slash Command trigger
     if (val === '/' && onTriggerSlash) {
       const rect = contentRef.current.getBoundingClientRect();
-      onTriggerSlash(rect); // Pass coordinates
+      onTriggerSlash(rect);
     }
 
+    // Debounced update to parent - prevents re-render during typing
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
       onUpdate({ content: val });
-    }, 300);
+    }, 500);
   }, [onUpdate, onTriggerSlash]);
 
   const handleKeyDown = useCallback((e) => {
+    // Delete empty block on backspace
     if (e.key === 'Backspace' && e.target.innerText.trim() === '') {
       e.preventDefault();
       onDelete();
     }
+    // Optional: handle Enter for new block
     if (e.key === 'Enter' && !e.shiftKey) {
-      // End editing on Enter? No, standard behavior is new block usually.
-      // But for now let's keep default behavior or maybe blur?
-      // e.preventDefault();
-      // e.target.blur();
+      // Let default behavior or integrate with block creation
     }
   }, [onDelete]);
 
-  if (isEditing) {
-    return (
+  const handleBlur = useCallback(() => {
+    setIsFocused(false);
+    // Final save on blur
+    if (contentRef.current) {
+      const val = contentRef.current.innerText;
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      onUpdate({ content: val });
+    }
+  }, [onUpdate]);
+
+  const isEmpty = !block.content || block.content.trim() === '';
+
+  return (
+    <>
       <div
         ref={contentRef}
         contentEditable
         suppressContentEditableWarning
-        data-placeholder="Ketik di sini... (Gunakan / untuk menu)"
         onInput={handleInput}
         onKeyDown={handleKeyDown}
-        onBlur={() => setIsEditing(false)}
-        autoFocus
+        onFocus={() => setIsFocused(true)}
+        onBlur={handleBlur}
+        data-placeholder={isEmpty && isFocused ? "Ketik '/' untuk perintah..." : ""}
+        className="paragraph-block"
         style={{
           color: 'var(--text-primary)',
-          fontSize: 14,
-          lineHeight: 1.75,
-          minHeight: '1.75em',
-          fontFamily: 'var(--font-mono)',
-          padding: '1px 0',
+          fontSize: 15,
+          lineHeight: 1.7,
+          minHeight: '1.7em',
+          fontFamily: 'var(--font-sans)',
+          padding: '3px 2px',
           outline: 'none',
-          whiteSpace: 'pre-wrap'
+          whiteSpace: 'pre-wrap',
+          wordBreak: 'break-word',
+          borderRadius: 3,
+          transition: 'background 0.15s',
+          position: 'relative'
         }}
       />
-    );
-  }
-
-  return (
-    <div
-      onClick={() => setIsEditing(true)}
-      style={{
-        color: 'var(--text-secondary)',
-        fontSize: 14,
-        lineHeight: 1.75,
-        minHeight: '1.75em',
-        fontFamily: 'var(--font-mono)',
-        padding: '1px 0',
-        cursor: 'text',
-        whiteSpace: 'pre-wrap'
-      }}
-    >
-      <RichTextRenderer content={block.content || ''} onNavigate={onNavigate} />
-      {(!block.content) && <span style={{ color: 'var(--text-dim)', opacity: 0.5 }}>Ketik di sini...</span>}
-    </div>
+      <style>{`
+        .paragraph-block:empty::before {
+          content: attr(data-placeholder);
+          color: var(--text-dim);
+          opacity: 0.5;
+          pointer-events: none;
+        }
+        .paragraph-block:hover {
+          background: var(--bg-hover);
+        }
+        .paragraph-block:focus {
+          background: transparent;
+        }
+      `}</style>
+    </>
   );
 }

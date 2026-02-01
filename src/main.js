@@ -1,20 +1,8 @@
-const electron = require('electron');
-
-// Defensive check to ensure we are running in Electron main process
-if (typeof electron === 'string') {
-  console.error('[NotePro] Error: main.js is running in a plain Node environment.');
-  console.error('[NotePro] Path detected:', electron);
-  console.error('[NotePro] Please ensure you are running with the "electron" binary.');
-  process.exit(1);
-}
-
-const { app, BrowserWindow, ipcMain, shell, protocol, dialog, net } = electron;
+const { app, BrowserWindow, ipcMain, shell, protocol, dialog, net } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
 console.log('[NotePro] Starting Main Process...');
-console.log('[NotePro] Electron:', process.versions.electron || 'N/A');
-console.log('[NotePro] Node:', process.versions.node);
 
 // ─── DATABASE SETUP (using sql.js - pure JavaScript SQLite) ─────────────────────────────────────────
 let DB_DIR;
