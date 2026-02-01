@@ -1,16 +1,18 @@
 import React, { memo } from 'react';
-import { ParagraphBlock } from '../blocks/ParagraphBlock';
-import { HeadingBlock } from '../blocks/HeadingBlock';
-import { ListBlock } from '../blocks/ListBlock';
-import { TodoBlock } from '../blocks/TodoBlock';
-import { ToggleBlock } from '../blocks/ToggleBlock';
-import { QuoteBlock } from '../blocks/QuoteBlock';
-import { DividerBlock } from '../blocks/DividerBlock';
-import { KanbanBlock } from '../blocks/KanbanBlock';
-import { TableBlock } from '../blocks/TableBlock';
-import { ImageBlock } from '../blocks/ImageBlock';
-import { CodeBlock } from '../blocks/CodeBlock';
-import { EmbedBlock } from '../blocks/EmbedBlock';
+import {
+  ParagraphBlock,
+  HeadingBlock,
+  ListBlock,
+  TodoBlock,
+  ToggleBlock,
+  QuoteBlock,
+  DividerBlock,
+  KanbanBlock,
+  TableBlock,
+  ImageBlock,
+  CodeBlock,
+  EmbedBlock
+} from '@/components/blocks';
 
 function BlockRendererComponent({ block, onUpdate, onDelete, onNavigate, onTriggerSlash }) {
   switch (block.type) {

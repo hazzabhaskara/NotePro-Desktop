@@ -1,8 +1,9 @@
 import React, { useState, useRef } from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { BlockRenderer } from './BlockRenderer';
-import { BlockMenu } from '../ui/BlockMenu';
+import { BlockRenderer } from '@/components/editor';
+import { BlockMenu } from '@/components/ui';
+
 
 export function SortableBlock({
     block,

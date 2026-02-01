@@ -14,14 +14,11 @@ import {
   verticalListSortingStrategy
 } from '@dnd-kit/sortable';
 
-import { EditableTitle } from './EditableTitle';
-import { PageTags } from '../tags/PageTags';
-import { SortableBlock } from './SortableBlock';
-import { AddBlockToolbar } from './AddBlockToolbar';
-import { SlashMenu } from './SlashMenu';
-import { useHistory } from '../../hooks/useHistory';
-import { exportMarkdown } from '../../utils/exportMarkdown';
-import { TEMPLATES } from '../../utils/templates';
+import { EditableTitle, SortableBlock, AddBlockToolbar, SlashMenu } from '@/components/editor';
+import { PageTags } from '@/components/tags';
+import { useHistory } from '@/hooks';
+import { exportMarkdown, TEMPLATES } from '@/utils';
+
 
 export function PageEditor({ page, onUpdatePage, onRefreshPage, onNavigate }) {
   // Use history hook for blocks state

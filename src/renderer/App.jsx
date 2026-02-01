@@ -1,10 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { TitleBar } from './components/layout/TitleBar';
-import { Sidebar } from './components/layout/Sidebar';
-import { PageEditor } from './components/editor/PageEditor';
-import { SearchModal } from './components/ui/SearchModal';
-import { ShortcutsModal } from './components/ui/ShortcutsModal';
-import { ConfirmationModal } from './components/ui/ConfirmationModal';
+import { TitleBar, Sidebar } from '@/components/layout';
+import { PageEditor } from '@/components/editor';
+import { SearchModal, ShortcutsModal, ConfirmationModal } from '@/components/ui';
 
 export function App() {
   const [pages, setPages] = useState([]);
