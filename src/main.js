@@ -1,6 +1,20 @@
-const { app, BrowserWindow, ipcMain, shell, protocol, dialog, net } = require('electron');
+const electron = require('electron');
+
+// Defensive check to ensure we are running in Electron main process
+if (typeof electron === 'string') {
+  console.error('[NotePro] Error: main.js is running in a plain Node environment.');
+  console.error('[NotePro] Path detected:', electron);
+  console.error('[NotePro] Please ensure you are running with the "electron" binary.');
+  process.exit(1);
+}
+
+const { app, BrowserWindow, ipcMain, shell, protocol, dialog, net } = electron;
 const path = require('path');
 const fs = require('fs');
+
+console.log('[NotePro] Starting Main Process...');
+console.log('[NotePro] Electron:', process.versions.electron || 'N/A');
+console.log('[NotePro] Node:', process.versions.node);
 
 // ─── DATABASE SETUP (using sql.js - pure JavaScript SQLite) ─────────────────────────────────────────
 let DB_DIR;
@@ -10,6 +24,7 @@ let db = null;
 let SQL = null;
 
 async function initDatabase() {
+  console.log('[DB] Initializing database...');
   // Initialize paths after app is ready
   DB_DIR = path.join(app.getPath('userData'), 'notepro');
   DB_PATH = path.join(DB_DIR, 'notepro.db');
@@ -117,50 +132,7 @@ async function initDatabase() {
   }
 }
 
-// ─── TAGS IPC HANDLERS ─────────────────────────────────────────
-
-ipcMain.handle('get-tags', wrapHandler(() => {
-  return queryAll('SELECT * FROM tags ORDER BY name ASC');
-}));
-
-ipcMain.handle('create-tag', wrapHandler((_, { name, color }) => {
-  const id = generateId('tag-');
-  const now = nowISO();
-  runSql('INSERT INTO tags (id, name, color, created_at) VALUES (?, ?, ?, ?)',
-    [id, name, color || '#6366f1', now]);
-  return { id, name, color: color || '#6366f1' };
-}));
-
-ipcMain.handle('delete-tag', wrapHandler((_, tagId) => {
-  runSql('DELETE FROM tags WHERE id = ?', [tagId]);
-  return true;
-}));
-
-ipcMain.handle('get-page-tags', wrapHandler((_, pageId) => {
-  const sql = `
-    SELECT t.* 
-    FROM tags t
-    JOIN page_tags pt ON pt.tag_id = t.id
-    WHERE pt.page_id = ?
-  `;
-  return queryAll(sql, [pageId]);
-}));
-
-ipcMain.handle('add-tag-to-page', wrapHandler((_, { pageId, tagId }) => {
-  // Check default
-  const exists = queryGet('SELECT * FROM page_tags WHERE page_id = ? AND tag_id = ?', [pageId, tagId]);
-  if (!exists) {
-    runSql('INSERT INTO page_tags (page_id, tag_id) VALUES (?, ?)', [pageId, tagId]);
-  }
-  return true;
-}));
-
-ipcMain.handle('remove-tag-from-page', wrapHandler((_, { pageId, tagId }) => {
-  runSql('DELETE FROM page_tags WHERE page_id = ? AND tag_id = ?', [pageId, tagId]);
-  return true;
-}));
-
-// ─── UTILITIES ──────────────────────────────────────────
+// ─── UTILITIES (Global Scope) ──────────────────────────────────────────
 
 function saveDatabase() {
   if (db) {
@@ -361,31 +333,74 @@ function wrapHandler(handler) {
   };
 }
 
-// ─── IPC HANDLERS ───────────────────────────────────────────
-
-// Ambil semua pages
-// Ambil semua pages (flat list, filter deleted)
-ipcMain.handle('get-pages', wrapHandler(() => {
-  let pages;
-  try {
-    pages = queryAll('SELECT * FROM pages WHERE deleted_at IS NULL ORDER BY "order" ASC');
-  } catch (e) {
-    pages = queryAll('SELECT * FROM pages ORDER BY "order" ASC');
-  }
-  return pages.map(p => ({
-    ...p,
-    parentId: p.parent_id,
-    createdAt: p.created_at,
-    updatedAt: p.updated_at,
-    isFavorite: !!p.is_favorite
+// ─── TAGS IPC HANDLERS ─────────────────────────────────────────
+function registerIpcHandlers() {
+  ipcMain.handle('get-tags', wrapHandler(() => {
+    return queryAll('SELECT * FROM tags ORDER BY name ASC');
   }));
-}));
 
-// FULL-TEXT SEARCH
-ipcMain.handle('search-pages', wrapHandler((_, query) => {
-  if (!query) return [];
-  const search = `%${query}%`;
-  const sql = `
+  ipcMain.handle('create-tag', wrapHandler((_, { name, color }) => {
+    const id = generateId('tag-');
+    const now = nowISO();
+    runSql('INSERT INTO tags (id, name, color, created_at) VALUES (?, ?, ?, ?)',
+      [id, name, color || '#6366f1', now]);
+    return { id, name, color: color || '#6366f1' };
+  }));
+
+  ipcMain.handle('delete-tag', wrapHandler((_, tagId) => {
+    runSql('DELETE FROM tags WHERE id = ?', [tagId]);
+    return true;
+  }));
+
+  ipcMain.handle('get-page-tags', wrapHandler((_, pageId) => {
+    const sql = `
+    SELECT t.* 
+    FROM tags t
+    JOIN page_tags pt ON pt.tag_id = t.id
+    WHERE pt.page_id = ?
+  `;
+    return queryAll(sql, [pageId]);
+  }));
+
+  ipcMain.handle('add-tag-to-page', wrapHandler((_, { pageId, tagId }) => {
+    // Check default
+    const exists = queryGet('SELECT * FROM page_tags WHERE page_id = ? AND tag_id = ?', [pageId, tagId]);
+    if (!exists) {
+      runSql('INSERT INTO page_tags (page_id, tag_id) VALUES (?, ?)', [pageId, tagId]);
+    }
+    return true;
+  }));
+
+  ipcMain.handle('remove-tag-from-page', wrapHandler((_, { pageId, tagId }) => {
+    runSql('DELETE FROM page_tags WHERE page_id = ? AND tag_id = ?', [pageId, tagId]);
+    return true;
+  }));
+
+  // ─── IPC HANDLERS ───────────────────────────────────────────
+
+  // Ambil semua pages
+  // Ambil semua pages (flat list, filter deleted)
+  ipcMain.handle('get-pages', wrapHandler(() => {
+    let pages;
+    try {
+      pages = queryAll('SELECT * FROM pages WHERE deleted_at IS NULL ORDER BY "order" ASC');
+    } catch (e) {
+      pages = queryAll('SELECT * FROM pages ORDER BY "order" ASC');
+    }
+    return pages.map(p => ({
+      ...p,
+      parentId: p.parent_id,
+      createdAt: p.created_at,
+      updatedAt: p.updated_at,
+      isFavorite: !!p.is_favorite
+    }));
+  }));
+
+  // FULL-TEXT SEARCH
+  ipcMain.handle('search-pages', wrapHandler((_, query) => {
+    if (!query) return [];
+    const search = `%${query}%`;
+    const sql = `
     SELECT DISTINCT p.* 
     FROM pages p
     LEFT JOIN blocks b ON b.page_id = p.id
@@ -396,223 +411,223 @@ ipcMain.handle('search-pages', wrapHandler((_, query) => {
     )
     LIMIT 20
   `;
-  const rows = queryAll(sql, [search, search]);
-  return rows.map(p => ({
-    ...p,
-    parentId: p.parent_id,
-    createdAt: p.created_at,
-    updatedAt: p.updated_at,
-    isFavorite: !!p.is_favorite
+    const rows = queryAll(sql, [search, search]);
+    return rows.map(p => ({
+      ...p,
+      parentId: p.parent_id,
+      createdAt: p.created_at,
+      updatedAt: p.updated_at,
+      isFavorite: !!p.is_favorite
+    }));
   }));
-}));
 
-// EXPORT PDF
-ipcMain.handle('export-pdf', wrapHandler(async (event, title) => {
-  const win = BrowserWindow.fromWebContents(event.sender);
-  const { filePath } = await dialog.showSaveDialog(win, {
-    title: 'Simpan PDF',
-    defaultPath: `${title || 'Document'}.pdf`,
-    filters: [{ name: 'PDF', extensions: ['pdf'] }]
-  });
-  if (filePath) {
-    const data = await win.webContents.printToPDF({
-      printBackground: true,
-      pageSize: 'A4',
-      margins: { top: 0, bottom: 0, left: 0, right: 0 } // Minimal margins usually better for screen calc
+  // EXPORT PDF
+  ipcMain.handle('export-pdf', wrapHandler(async (event, title) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    const { filePath } = await dialog.showSaveDialog(win, {
+      title: 'Simpan PDF',
+      defaultPath: `${title || 'Document'}.pdf`,
+      filters: [{ name: 'PDF', extensions: ['pdf'] }]
     });
-    fs.writeFileSync(filePath, data);
-    return true;
-  }
-  return false;
-}));
-
-// Ambil pages di trash
-ipcMain.handle('get-trash-pages', wrapHandler(() => {
-  const pages = queryAll('SELECT * FROM pages WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC');
-  return pages.map(p => ({
-    ...p,
-    parentId: p.parent_id,
-    createdAt: p.created_at,
-    updatedAt: p.updated_at,
-    deletedAt: p.deleted_at
+    if (filePath) {
+      const data = await win.webContents.printToPDF({
+        printBackground: true,
+        pageSize: 'A4',
+        margins: { top: 0, bottom: 0, left: 0, right: 0 } // Minimal margins usually better for screen calc
+      });
+      fs.writeFileSync(filePath, data);
+      return true;
+    }
+    return false;
   }));
-}));
 
-// Ambil single page + blocks
-ipcMain.handle('get-page', wrapHandler((_, pageId) => {
-  const page = queryGet('SELECT * FROM pages WHERE id = ?', [pageId]);
-  if (!page) return null;
-  const blocks = queryAll('SELECT * FROM blocks WHERE page_id = ? ORDER BY "order" ASC', [pageId]);
-  return {
-    ...page,
-    parentId: page.parent_id,
-    createdAt: page.created_at,
-    updatedAt: page.updated_at,
-    blocks: blocks.map(b => ({
-      ...b,
-      pageId: b.page_id,
-      createdAt: b.created_at,
-      meta: JSON.parse(b.meta)
-    }))
-  };
-}));
+  // Ambil pages di trash
+  ipcMain.handle('get-trash-pages', wrapHandler(() => {
+    const pages = queryAll('SELECT * FROM pages WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC');
+    return pages.map(p => ({
+      ...p,
+      parentId: p.parent_id,
+      createdAt: p.created_at,
+      updatedAt: p.updated_at,
+      deletedAt: p.deleted_at
+    }));
+  }));
 
-// Tambah page baru
-ipcMain.handle('create-page', wrapHandler((_, { title, icon, parentId }) => {
-  const now = nowISO();
-  const id = generateId('pg-');
+  // Ambil single page + blocks
+  ipcMain.handle('get-page', wrapHandler((_, pageId) => {
+    const page = queryGet('SELECT * FROM pages WHERE id = ?', [pageId]);
+    if (!page) return null;
+    const blocks = queryAll('SELECT * FROM blocks WHERE page_id = ? ORDER BY "order" ASC', [pageId]);
+    return {
+      ...page,
+      parentId: page.parent_id,
+      createdAt: page.created_at,
+      updatedAt: page.updated_at,
+      blocks: blocks.map(b => ({
+        ...b,
+        pageId: b.page_id,
+        createdAt: b.created_at,
+        meta: JSON.parse(b.meta)
+      }))
+    };
+  }));
 
-  // Hitung order
-  let maxOrder;
-  if (parentId) {
-    maxOrder = queryGet('SELECT COALESCE(MAX("order"), -1) as m FROM pages WHERE parent_id = ?', [parentId]);
-  } else {
-    maxOrder = queryGet('SELECT COALESCE(MAX("order"), -1) as m FROM pages WHERE parent_id IS NULL');
-  }
+  // Tambah page baru
+  ipcMain.handle('create-page', wrapHandler((_, { title, icon, parentId }) => {
+    const now = nowISO();
+    const id = generateId('pg-');
 
-  runSql('INSERT INTO pages (id, title, icon, parent_id, created_at, updated_at, "order") VALUES (?, ?, ?, ?, ?, ?, ?)',
-    [id, title || 'Halaman Baru', icon || '📄', parentId || null, now, now, (maxOrder?.m || 0) + 1]);
+    // Hitung order
+    let maxOrder;
+    if (parentId) {
+      maxOrder = queryGet('SELECT COALESCE(MAX("order"), -1) as m FROM pages WHERE parent_id = ?', [parentId]);
+    } else {
+      maxOrder = queryGet('SELECT COALESCE(MAX("order"), -1) as m FROM pages WHERE parent_id IS NULL');
+    }
 
-  // Tambah 2 blocks default
-  const h1Id = generateId('blk-');
-  const pId = generateId('blk-');
-  runSql('INSERT INTO blocks (id, page_id, type, content, meta, "order", created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-    [h1Id, id, 'heading1', title || 'Halaman Baru', '{}', 0, now]);
-  runSql('INSERT INTO blocks (id, page_id, type, content, meta, "order", created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-    [pId, id, 'paragraph', 'Mulai menulis di sini...', '{}', 1, now]);
+    runSql('INSERT INTO pages (id, title, icon, parent_id, created_at, updated_at, "order") VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [id, title || 'Halaman Baru', icon || '📄', parentId || null, now, now, (maxOrder?.m || 0) + 1]);
 
-  return id;
-}));
-
-// Update page (title / icon / favorite)
-ipcMain.handle('update-page', wrapHandler((_, { pageId, title, icon, isFavorite }) => {
-  const now = nowISO();
-  if (title !== undefined) runSql('UPDATE pages SET title = ?, updated_at = ? WHERE id = ?', [title, now, pageId]);
-  if (icon !== undefined) runSql('UPDATE pages SET icon = ?, updated_at = ? WHERE id = ?', [icon, now, pageId]);
-  if (isFavorite !== undefined) runSql('UPDATE pages SET is_favorite = ?, updated_at = ? WHERE id = ?', [isFavorite ? 1 : 0, now, pageId]);
-  return true;
-}));
-
-// Soft Delete Page (Set deleted_at)
-ipcMain.handle('delete-page', wrapHandler((_, pageId) => {
-  const now = nowISO();
-  // We don't delete blocks, just mark page as deleted. Blocks stay but are hidden since page is excluded.
-  runSql('UPDATE pages SET deleted_at = ? WHERE id = ?', [now, pageId]);
-
-  // Recursively soft delete children?
-  // For simplicity MVP: Just the page. Children might become orphans or we can cascade soft delete.
-  // Better UX: Cascade soft delete.
-  const children = queryAll('SELECT id FROM pages WHERE parent_id = ?', [pageId]);
-  children.forEach(child => {
-    runSql('UPDATE pages SET deleted_at = ? WHERE id = ?', [now, child.id]);
-  });
-
-  return true;
-}));
-
-// Restore Page
-ipcMain.handle('restore-page', wrapHandler((_, pageId) => {
-  runSql('UPDATE pages SET deleted_at = NULL WHERE id = ?', [pageId]);
-  return true;
-}));
-
-// Permanent Delete Page (Clean up blocks and page)
-ipcMain.handle('permanent-delete-page', wrapHandler((_, pageId) => {
-  runSql('DELETE FROM blocks WHERE page_id = ?', [pageId]);
-  runSql('DELETE FROM pages WHERE id = ?', [pageId]);
-  return true;
-}));
-
-
-// Tambah block baru
-ipcMain.handle('create-block', wrapHandler((_, { pageId, type, content, meta }) => {
-  const now = nowISO();
-  const id = generateId('blk-');
-  const maxOrder = queryGet('SELECT COALESCE(MAX("order"), -1) as m FROM blocks WHERE page_id = ?', [pageId]);
-  runSql('INSERT INTO blocks (id, page_id, type, content, meta, "order", created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-    [id, pageId, type, content || '', JSON.stringify(meta || {}), (maxOrder?.m || 0) + 1, now]);
-  return id;
-}));
-
-// Update block (content / meta)
-ipcMain.handle('update-block', wrapHandler((_, { blockId, content, meta }) => {
-  if (content !== undefined) runSql('UPDATE blocks SET content = ? WHERE id = ?', [content, blockId]);
-  if (meta !== undefined) runSql('UPDATE blocks SET meta = ? WHERE id = ?', [JSON.stringify(meta), blockId]);
-  return true;
-}));
-
-// Hapus block
-ipcMain.handle('delete-block', wrapHandler((_, blockId) => {
-  runSql('DELETE FROM blocks WHERE id = ?', [blockId]);
-  return true;
-}));
-
-// Reorder blocks
-ipcMain.handle('reorder-blocks', wrapHandler((_, { pageId, orderedIds }) => {
-  // We use a transaction-like approach (though runSql commits individually due to our debouncedSave logic)
-  // For safety, we just update each block's order
-  orderedIds.forEach((blockId, index) => {
-    runSql('UPDATE blocks SET "order" = ? WHERE id = ?', [index, blockId]);
-  });
-  return true;
-}));
-
-// Replace all blocks (for Undo/Redo)
-ipcMain.handle('replace-page-blocks', wrapHandler((_, { pageId, blocks }) => {
-  // 1. Delete all blocks for this page
-  runSql('DELETE FROM blocks WHERE page_id = ?', [pageId]);
-
-  // 2. Insert all blocks provided
-  const now = nowISO();
-  blocks.forEach((b, index) => {
+    // Tambah 2 blocks default
+    const h1Id = generateId('blk-');
+    const pId = generateId('blk-');
     runSql('INSERT INTO blocks (id, page_id, type, content, meta, "order", created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [b.id, pageId, b.type, b.content, JSON.stringify(b.meta || {}), index, b.createdAt || now]);
-  });
+      [h1Id, id, 'heading1', title || 'Halaman Baru', '{}', 0, now]);
+    runSql('INSERT INTO blocks (id, page_id, type, content, meta, "order", created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [pId, id, 'paragraph', 'Mulai menulis di sini...', '{}', 1, now]);
 
-  return true;
-}));
+    return id;
+  }));
 
-// Select Image (Local)
-ipcMain.handle('select-image', wrapHandler(async () => {
-  const { canceled, filePaths } = await dialog.showOpenDialog({
-    properties: ['openFile'],
-    filters: [{ name: 'Images', extensions: ['jpg', 'png', 'gif', 'webp', 'jpeg'] }]
-  });
+  // Update page (title / icon / favorite)
+  ipcMain.handle('update-page', wrapHandler((_, { pageId, title, icon, isFavorite }) => {
+    const now = nowISO();
+    if (title !== undefined) runSql('UPDATE pages SET title = ?, updated_at = ? WHERE id = ?', [title, now, pageId]);
+    if (icon !== undefined) runSql('UPDATE pages SET icon = ?, updated_at = ? WHERE id = ?', [icon, now, pageId]);
+    if (isFavorite !== undefined) runSql('UPDATE pages SET is_favorite = ?, updated_at = ? WHERE id = ?', [isFavorite ? 1 : 0, now, pageId]);
+    return true;
+  }));
 
-  if (canceled || filePaths.length === 0) {
-    return null;
-  }
+  // Soft Delete Page (Set deleted_at)
+  ipcMain.handle('delete-page', wrapHandler((_, pageId) => {
+    const now = nowISO();
+    // We don't delete blocks, just mark page as deleted. Blocks stay but are hidden since page is excluded.
+    runSql('UPDATE pages SET deleted_at = ? WHERE id = ?', [now, pageId]);
 
-  const srcPath = filePaths[0];
-  const imagesDir = path.join(app.getPath('userData'), 'notepro', 'images');
+    // Recursively soft delete children?
+    // For simplicity MVP: Just the page. Children might become orphans or we can cascade soft delete.
+    // Better UX: Cascade soft delete.
+    const children = queryAll('SELECT id FROM pages WHERE parent_id = ?', [pageId]);
+    children.forEach(child => {
+      runSql('UPDATE pages SET deleted_at = ? WHERE id = ?', [now, child.id]);
+    });
 
-  if (!fs.existsSync(imagesDir)) {
-    fs.mkdirSync(imagesDir, { recursive: true });
-  }
+    return true;
+  }));
 
-  const ext = path.extname(srcPath);
-  const fileName = Date.now() + '-' + Math.random().toString(36).substr(2, 9) + ext;
-  const destPath = path.join(imagesDir, fileName);
+  // Restore Page
+  ipcMain.handle('restore-page', wrapHandler((_, pageId) => {
+    runSql('UPDATE pages SET deleted_at = NULL WHERE id = ?', [pageId]);
+    return true;
+  }));
 
-  fs.copyFileSync(srcPath, destPath);
+  // Permanent Delete Page (Clean up blocks and page)
+  ipcMain.handle('permanent-delete-page', wrapHandler((_, pageId) => {
+    runSql('DELETE FROM blocks WHERE page_id = ?', [pageId]);
+    runSql('DELETE FROM pages WHERE id = ?', [pageId]);
+    return true;
+  }));
 
-  // Return protocol URL
-  return `notepro-image://${fileName}`;
-}));
 
-// Export Markdown
-ipcMain.handle('export-markdown', wrapHandler(async (_, { title, content }) => {
-  const { canceled, filePath } = await dialog.showSaveDialog({
-    title: 'Export to Markdown',
-    defaultPath: `${title}.md`,
-    filters: [{ name: 'Markdown', extensions: ['md'] }]
-  });
+  // Tambah block baru
+  ipcMain.handle('create-block', wrapHandler((_, { pageId, type, content, meta }) => {
+    const now = nowISO();
+    const id = generateId('blk-');
+    const maxOrder = queryGet('SELECT COALESCE(MAX("order"), -1) as m FROM blocks WHERE page_id = ?', [pageId]);
+    runSql('INSERT INTO blocks (id, page_id, type, content, meta, "order", created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [id, pageId, type, content || '', JSON.stringify(meta || {}), (maxOrder?.m || 0) + 1, now]);
+    return id;
+  }));
 
-  if (canceled || !filePath) return false;
+  // Update block (content / meta)
+  ipcMain.handle('update-block', wrapHandler((_, { blockId, content, meta }) => {
+    if (content !== undefined) runSql('UPDATE blocks SET content = ? WHERE id = ?', [content, blockId]);
+    if (meta !== undefined) runSql('UPDATE blocks SET meta = ? WHERE id = ?', [JSON.stringify(meta), blockId]);
+    return true;
+  }));
 
-  fs.writeFileSync(filePath, content, 'utf8');
-  return true;
-}));
+  // Hapus block
+  ipcMain.handle('delete-block', wrapHandler((_, blockId) => {
+    runSql('DELETE FROM blocks WHERE id = ?', [blockId]);
+    return true;
+  }));
+
+  // Reorder blocks
+  ipcMain.handle('reorder-blocks', wrapHandler((_, { pageId, orderedIds }) => {
+    // We use a transaction-like approach (though runSql commits individually due to our debouncedSave logic)
+    // For safety, we just update each block's order
+    orderedIds.forEach((blockId, index) => {
+      runSql('UPDATE blocks SET "order" = ? WHERE id = ?', [index, blockId]);
+    });
+    return true;
+  }));
+
+  // Replace all blocks (for Undo/Redo)
+  ipcMain.handle('replace-page-blocks', wrapHandler((_, { pageId, blocks }) => {
+    // 1. Delete all blocks for this page
+    runSql('DELETE FROM blocks WHERE page_id = ?', [pageId]);
+
+    // 2. Insert all blocks provided
+    const now = nowISO();
+    blocks.forEach((b, index) => {
+      runSql('INSERT INTO blocks (id, page_id, type, content, meta, "order", created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        [b.id, pageId, b.type, b.content, JSON.stringify(b.meta || {}), index, b.createdAt || now]);
+    });
+
+    return true;
+  }));
+
+  // Select Image (Local)
+  ipcMain.handle('select-image', wrapHandler(async () => {
+    const { canceled, filePaths } = await dialog.showOpenDialog({
+      properties: ['openFile'],
+      filters: [{ name: 'Images', extensions: ['jpg', 'png', 'gif', 'webp', 'jpeg'] }]
+    });
+
+    if (canceled || filePaths.length === 0) {
+      return null;
+    }
+
+    const srcPath = filePaths[0];
+    const imagesDir = path.join(app.getPath('userData'), 'notepro', 'images');
+
+    if (!fs.existsSync(imagesDir)) {
+      fs.mkdirSync(imagesDir, { recursive: true });
+    }
+
+    const ext = path.extname(srcPath);
+    const fileName = Date.now() + '-' + Math.random().toString(36).substr(2, 9) + ext;
+    const destPath = path.join(imagesDir, fileName);
+
+    fs.copyFileSync(srcPath, destPath);
+
+    // Return protocol URL
+    return `notepro-image://${fileName}`;
+  }));
+
+  ipcMain.handle('export-markdown', wrapHandler(async (_, { title, content }) => {
+    const { canceled, filePath } = await dialog.showSaveDialog({
+      title: 'Export to Markdown',
+      defaultPath: `${title}.md`,
+      filters: [{ name: 'Markdown', extensions: ['md'] }]
+    });
+
+    if (canceled || !filePath) return false;
+
+    fs.writeFileSync(filePath, content, 'utf8');
+    return true;
+  }));
+} // End of registerIpcHandlers
 
 // ─── APP LIFECYCLE ──────────────────────────────────────────
 
@@ -671,6 +686,7 @@ app.whenReady().then(async () => {
     return net.fetch('file:///' + imagePath);
   });
 
+  registerIpcHandlers();
   await initDatabase();
   createWindow();
 

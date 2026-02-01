@@ -4,6 +4,7 @@ import { Sidebar } from './components/layout/Sidebar';
 import { PageEditor } from './components/editor/PageEditor';
 import { SearchModal } from './components/ui/SearchModal';
 import { ShortcutsModal } from './components/ui/ShortcutsModal';
+import { ConfirmationModal } from './components/ui/ConfirmationModal';
 
 export function App() {
   const [pages, setPages] = useState([]);
@@ -13,6 +14,14 @@ export function App() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [loading, setLoading] = useState(true);
+
+  // Confirmation Modal State
+  const [confirmation, setConfirmation] = useState({
+    isOpen: false,
+    type: '', // 'delete' | 'permanent'
+    pageId: null,
+    title: ''
+  });
 
   // Theme State
   const [theme, setTheme] = useState(() => localStorage.getItem('notepro-theme') || 'dark');
@@ -87,7 +96,65 @@ export function App() {
     setActivePage(newPage);
   };
 
+  // ── Smart Daily Journal ──
+  const handleOpenDailyNote = async () => {
+    try {
+      // 1. Check/create "Journal" folder at root
+      let journalFolder = pages.find(p => p.title === 'Journal' && !p.parentId);
+      if (!journalFolder) {
+        const folderId = await window.notepro.createPage({
+          title: 'Journal',
+          icon: '📓',
+          parentId: null
+        });
+        await loadPages();
+        // Re-fetch to get the updated pages list
+        const updatedPages = await window.notepro.getPages();
+        journalFolder = updatedPages.find(p => p.id === folderId);
+      }
+
+      // 2. Format date in Indonesian locale (Senin, 2 Februari 2026)
+      const today = new Date().toLocaleDateString('id-ID', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+      });
+
+      // 3. Check if today's page already exists
+      const allPages = await window.notepro.getPages();
+      let dailyPage = allPages.find(p => p.title === today && p.parentId === journalFolder.id);
+
+      // 4. Create if not exists
+      if (!dailyPage) {
+        const newId = await window.notepro.createPage({
+          title: today,
+          icon: '📅',
+          parentId: journalFolder.id
+        });
+        await loadPages();
+        dailyPage = await window.notepro.getPage(newId);
+      }
+
+      // 5. Set as active page
+      setActivePage(dailyPage);
+    } catch (error) {
+      console.error('Failed to open daily note:', error);
+    }
+  };
+
+  // ── Delete Page (with confirmation) ──
   const handleDeletePage = async (pageId) => {
+    const targetPage = pages.find(p => p.id === pageId);
+    setConfirmation({
+      isOpen: true,
+      type: 'delete',
+      pageId: pageId,
+      title: targetPage?.title || 'Halaman'
+    });
+  };
+
+  const executeDeletePage = async (pageId) => {
     // Optimistic Update
     const prevPages = [...pages];
     const prevTrash = [...trashPages];
@@ -106,14 +173,12 @@ export function App() {
       }
 
       await window.notepro.deletePage(pageId);
-      // await loadPages(); // No need to reload entire list if optimistic works, or can do silent re-fetch
     } catch (error) {
       console.error("Failed to delete page:", error);
       // Revert rollback
       setPages(prevPages);
       setTrashPages(prevTrash);
       if (activePage?.id === pageId) setActivePage(targetPage); // Restore active
-      alert("Gagal menghapus halaman (lihat console).");
     }
   };
 
@@ -141,7 +206,18 @@ export function App() {
     await loadPages();
   };
 
+  // ── Permanent Delete (with confirmation) ──
   const handlePermanentDelete = async (pageId) => {
+    const targetPage = trashPages.find(p => p.id === pageId);
+    setConfirmation({
+      isOpen: true,
+      type: 'permanent',
+      pageId: pageId,
+      title: targetPage?.title || 'Halaman'
+    });
+  };
+
+  const executePermanentDelete = async (pageId) => {
     // Optimistic
     const prevTrash = [...trashPages];
     setTrashPages(prev => prev.filter(p => p.id !== pageId));
@@ -151,7 +227,29 @@ export function App() {
     } catch (error) {
       console.error("Failed to permanently delete page:", error);
       setTrashPages(prevTrash); // Revert
-      alert("Gagal menghapus permanen.");
+    }
+  };
+
+  // ── Handle Confirmation Modal Actions ──
+  const handleConfirmAction = () => {
+    if (confirmation.type === 'delete') {
+      executeDeletePage(confirmation.pageId);
+    } else if (confirmation.type === 'permanent') {
+      executePermanentDelete(confirmation.pageId);
+    }
+    setConfirmation({ isOpen: false, type: '', pageId: null, title: '' });
+  };
+
+  // ── Handle Move Page (Drag & Drop) ──
+  const handleMovePage = async (pageId, newParentId) => {
+    try {
+      // Prevent moving to itself or its children
+      if (pageId === newParentId) return;
+
+      await window.notepro.updatePage({ pageId, parentId: newParentId });
+      await loadPages();
+    } catch (error) {
+      console.error('Failed to move page:', error);
     }
   };
 
@@ -194,6 +292,8 @@ export function App() {
             onOpenSearch={() => setSearchOpen(true)}
             onToggleTheme={toggleTheme}
             theme={theme}
+            onOpenDailyNote={handleOpenDailyNote}
+            onMovePage={handleMovePage}
           />
         )}
 
@@ -254,12 +354,29 @@ export function App() {
           pages={pages}
           onClose={() => setSearchOpen(false)}
           onSelect={(pageId) => { navigateToPage(pageId); setSearchOpen(false); }}
+          onCreatePage={() => { handleCreatePage({ title: 'Halaman Baru', icon: '📄' }); setSearchOpen(false); }}
+          onToggleTheme={() => { toggleTheme(); setSearchOpen(false); }}
+          onOpenDailyNote={() => { handleOpenDailyNote(); setSearchOpen(false); }}
         />
       )}
 
       {shortcutsOpen && (
         <ShortcutsModal onClose={() => setShortcutsOpen(false)} />
       )}
+
+      {/* Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={confirmation.isOpen}
+        onClose={() => setConfirmation({ isOpen: false, type: '', pageId: null, title: '' })}
+        onConfirm={handleConfirmAction}
+        title={confirmation.type === 'permanent' ? 'Hapus Selamanya?' : 'Hapus Halaman?'}
+        message={confirmation.type === 'permanent'
+          ? `Halaman "${confirmation.title}" akan dihapus permanen. Tindakan ini tidak dapat dibatalkan.`
+          : `Halaman "${confirmation.title}" akan dipindahkan ke Sampah.`
+        }
+        confirmLabel={confirmation.type === 'permanent' ? 'Hapus Permanen' : 'Pindah ke Sampah'}
+        isDanger={confirmation.type === 'permanent'}
+      />
     </div>
   );
 }

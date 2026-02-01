@@ -1,6 +1,5 @@
-import React, { useState, useEffect, useMemo, memo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { ContextMenu } from '../ui/ContextMenu';
-import { ConfirmationModal } from '../ui/ConfirmationModal';
 
 // ─── Trash Item Component ───
 const TrashItem = ({ page, onContextMenu }) => {
@@ -33,7 +32,8 @@ const PageItem = ({
   onNavigate,
   onToggleExpand,
   onContextMenu,
-  onCreatePage
+  onCreatePage,
+  onMovePage
 }) => {
   // Simple filter, relying on React fast render
   const children = allPages.filter(p => p.parentId === page.id);
@@ -41,10 +41,34 @@ const PageItem = ({
   const isExpanded = expandedIds[page.id];
   const hasChildren = children.length > 0;
 
+  // Drag and Drop handlers
+  const handleDragStart = (e) => {
+    e.dataTransfer.setData('text/plain', page.id);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const draggedId = e.dataTransfer.getData('text/plain');
+    if (draggedId && draggedId !== page.id) {
+      onMovePage(draggedId, page.id);
+    }
+  };
+
   return (
     <div>
       {/* Row */}
       <div
+        draggable="true"
+        onDragStart={handleDragStart}
+        onDragOver={handleDragOver}
+        onDrop={handleDrop}
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -56,7 +80,7 @@ const PageItem = ({
           borderRadius: 'var(--radius-md)',
           marginLeft: 6,
           marginRight: 6,
-          cursor: 'pointer',
+          cursor: 'grab',
           background: isActive ? 'var(--bg-hover)' : 'transparent',
           transition: 'background var(--transition)',
           position: 'relative',
@@ -147,6 +171,7 @@ const PageItem = ({
           onToggleExpand={onToggleExpand}
           onContextMenu={onContextMenu}
           onCreatePage={onCreatePage}
+          onMovePage={onMovePage}
         />
       ))}
     </div>
@@ -166,15 +191,14 @@ export function Sidebar({
   onRestorePage,
   onPermanentDelete,
   onToggleTheme,
-  theme
+  theme,
+  onOpenDailyNote,
+  onMovePage
 }) {
   // Initialize extended state
   const [expandedIds, setExpandedIds] = useState({ 'page-4': true });
   const [trashOpen, setTrashOpen] = useState(false);
   const [contextMenu, setContextMenu] = useState(null); // { x, y, pageId, isTrash }
-
-  // Confirmation Modal State
-  const [confirmModal, setConfirmModal] = useState({ isOpen: false, title: '', message: '', onConfirm: null, isDanger: false });
 
 
   const favorites = useMemo(() => pages.filter(p => p.isFavorite), [pages]);
@@ -195,11 +219,6 @@ export function Sidebar({
     if (action === 'sub') {
       onCreatePage({ parentId: pageId, title: 'Sub-halaman Baru', icon: '📄' });
     } else if (action === 'delete') {
-      // Soft delete shouldn't need confirmation, or maybe optional? 
-      // User request implied fix soft delete too, but usually soft delete is instant.
-      // Let's keep it instant for soft delete based on UX best practices, 
-      // but if user wants confirm for everything we can add it. 
-      // For now, executing directly as per typical "Trash" workflow.
       onDeletePage(pageId);
     } else if (action === 'toggle-fav') {
       const page = pages.find(p => p.id === pageId);
@@ -207,17 +226,7 @@ export function Sidebar({
     } else if (action === 'restore') {
       onRestorePage(pageId);
     } else if (action === 'permanent-delete') {
-      setConfirmModal({
-        isOpen: true,
-        title: 'Hapus Selamanya?',
-        message: 'Tindakan ini tidak dapat dibatalkan. Halaman akan hilang permanen.',
-        confirmLabel: 'Hapus',
-        isDanger: true,
-        onConfirm: () => {
-          onPermanentDelete(pageId);
-          setConfirmModal(prev => ({ ...prev, isOpen: false }));
-        }
-      });
+      onPermanentDelete(pageId);
     }
   };
 
@@ -292,6 +301,31 @@ export function Sidebar({
         <span style={{ fontSize: 14 }}>🔍</span>
         <span>Cari...</span>
         <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--text-dim)', background: 'var(--bg-hover)', borderRadius: 4, padding: '1px 5px' }}>⌘K</span>
+      </button>
+
+      {/* ── Daily Journal Button ── */}
+      <button
+        onClick={onOpenDailyNote}
+        style={{
+          margin: '0 10px 10px',
+          background: 'linear-gradient(135deg, var(--accent-indigo), var(--accent-pink))',
+          border: 'none',
+          borderRadius: 'var(--radius-md)',
+          padding: '8px 12px',
+          color: '#fff',
+          fontSize: 12,
+          fontWeight: 600,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          cursor: 'pointer',
+          transition: 'opacity var(--transition), transform var(--transition)'
+        }}
+        onMouseEnter={e => { e.currentTarget.style.opacity = '0.9'; e.currentTarget.style.transform = 'scale(1.02)'; }}
+        onMouseLeave={e => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.transform = 'scale(1)'; }}
+      >
+        <span>📅</span>
+        <span>Jurnal Hari Ini</span>
       </button>
 
       <div style={{ flex: 1, overflowY: 'auto', paddingBottom: 8 }}>
@@ -369,6 +403,7 @@ export function Sidebar({
               onToggleExpand={toggleExpand}
               onContextMenu={handleContextMenu}
               onCreatePage={onCreatePage}
+              onMovePage={onMovePage}
             />
           ))}
         </div>
@@ -455,21 +490,11 @@ export function Sidebar({
         />
       )}
 
-      {/* Confirmation Modal */}
-      <ConfirmationModal
-        isOpen={confirmModal.isOpen}
-        onClose={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
-        onConfirm={confirmModal.onConfirm}
-        title={confirmModal.title}
-        message={confirmModal.message}
-        confirmLabel={confirmModal.confirmLabel}
-        isDanger={confirmModal.isDanger}
-      />
-
       {/* CSS: show + btn on row hover */}
       <style>{`
         .page-add-btn { opacity: 0 !important; }
         div[style*="position: relative"]:hover .page-add-btn { opacity: 1 !important; }
+        [draggable="true"]:active { cursor: grabbing; }
       `}</style>
     </div>
   );
